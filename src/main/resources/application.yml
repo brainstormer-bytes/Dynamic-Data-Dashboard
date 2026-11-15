@@ -1,1 +1,25 @@
-spring.application.name=Criteria-API
+spring:
+  application:
+    name: Criteria-API
+
+  # Datasource: explicit H2 in-memory
+  datasource:
+    url: jdbc:h2:mem:dashboarddb;
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  # JPA / Hibernate
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
