@@ -18,6 +18,10 @@ public class Dataset {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "workspace_id", nullable = false)
+    private Workspace workspace;
+
     @Column(nullable = false)
     private String name;
 
