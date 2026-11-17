@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: Criteria-API
+
+  # Datasource: explicit H2 in-memory (Postgres stays on classpath but unused)
+  datasource:
+    url: jdbc:h2:mem:dashboarddb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  # JPA / Hibernate
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    # demo only: keeps lazy associations readable while we test
+    open-in-view: true
+  flyway:
+    enabled: false      # Postgres-specific migrations may not run on H2
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+app:
+  seed:
+    demo-password: ${SEED_DEMO_PASSWORD}
+    workspace-name: Axlero Demo Workspace
+    dataset-name: Demo Sales 2026
+    users:
+      - { username: aditya, email: aditya@axlero.demo, role: ADMIN }
+      - { username: demo_user, email: demo@axlero.demo, role: VIEWER }
