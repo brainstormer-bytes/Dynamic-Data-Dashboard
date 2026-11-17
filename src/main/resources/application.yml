@@ -1,1 +1,17 @@
-spring.application.name=Criteria-API
+spring:
+  application:
+    name: Criteria-API
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/dashboard_builder
+    username: postgres
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
