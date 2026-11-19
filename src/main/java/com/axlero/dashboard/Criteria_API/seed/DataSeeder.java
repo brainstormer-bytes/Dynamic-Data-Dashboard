@@ -1,6 +1,7 @@
 package com.axlero.dashboard.Criteria_API.seed;
 
 import com.axlero.dashboard.Criteria_API.entity.*;
+import com.axlero.dashboard.Criteria_API.enums.UserStatus;
 import com.axlero.dashboard.Criteria_API.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
@@ -110,7 +111,7 @@ public class DataSeeder implements CommandLineRunner {
                     u.setUsername(su.username());
                     u.setEmail(su.email());
                     u.setPassword(passwordEncoder.encode(props.demoPassword()));
-                    u.setStatus("ACTIVE");
+                    u.setStatus(UserStatus.ACTIVE);
                     return userRepository.save(u);
                 });
     }

@@ -12,3 +12,6 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration/client
+  jwt:
+    secret: ${JWT_SECRET}                                   # Base64, >= 32 bytes. Generate: openssl rand -base64 32
+    access-expiration: ${JWT_ACCESS_EXPIRATION}   # 15 min (ms)
