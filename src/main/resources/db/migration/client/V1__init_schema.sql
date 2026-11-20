@@ -128,6 +128,16 @@ CREATE TABLE sales_records (
                                    FOREIGN KEY (dataset_id) REFERENCES datasets(id)
 );
 
+-- 9. JWT REFRESH TOKENS
+CREATE TABLE refresh_tokens (
+                                id          BIGSERIAL PRIMARY KEY,
+                                user_id     BIGINT      NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+                                token_hash  VARCHAR(64) NOT NULL UNIQUE,
+                                expires_at  TIMESTAMP   NOT NULL,
+                                revoked     BOOLEAN     NOT NULL DEFAULT FALSE,
+                                created_at  TIMESTAMP   NOT NULL
+);
+
 -- Indexes for commonly used relationships and lookups
 CREATE INDEX idx_workspaces_created_by
     ON workspaces(created_by_user_id);
@@ -155,3 +165,6 @@ CREATE INDEX idx_widget_configs_dataset
 
 CREATE INDEX idx_sales_records_dataset
     ON sales_records(dataset_id);
+
+CREATE INDEX idx_refresh_tokens_user_id
+    ON refresh_tokens (user_id);
