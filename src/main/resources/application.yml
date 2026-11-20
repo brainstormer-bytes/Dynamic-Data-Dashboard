@@ -1,1 +1,18 @@
-spring.application.name=Criteria-API
+spring:
+  application:
+    name: Criteria-API
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/client
+  jwt:
+    secret: ${JWT_SECRET}                       # Base64, >= 32 bytes. Generate: openssl rand -base64 32
+    access-expiration: ${JWT_ACCESS_EXPIRATION}
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION}
