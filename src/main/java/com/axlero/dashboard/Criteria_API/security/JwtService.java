@@ -15,21 +15,29 @@ import java.util.UUID;
 public class JwtService {
 
     public static final String TYPE_ACCESS = "access";
+    public static final String TYPE_REFRESH = "refresh";
     private static final String CLAIM_TYPE = "type";
     private static final String CLAIM_USER_ID = "uid";
 
     private final SecretKey signingKey;
     private final long accessExpirationMs;
+    private final long refreshExpirationMs;
 
     public JwtService(@Value("${jwt.secret}") String secret,
-                      @Value("${jwt.access-expiration}") long accessExpirationMs) {
+                      @Value("${jwt.access-expiration}") long accessExpirationMs,
+                      @Value("${jwt.refresh-expiration}") long refreshExpirationMs) {
         // Base64-encoded secret, at least 256 bits (32 bytes) or jjwt throws WeakKeyException at startup
         this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret));
         this.accessExpirationMs = accessExpirationMs;
+        this.refreshExpirationMs = refreshExpirationMs;
     }
 
     public String generateAccessToken(CustomUserDetails user) {
         return buildToken(user, TYPE_ACCESS, accessExpirationMs);
+    }
+
+    public String generateRefreshToken(CustomUserDetails user) {
+        return buildToken(user, TYPE_REFRESH, refreshExpirationMs);
     }
 
     private String buildToken(CustomUserDetails user, String type, long ttlMs) {
@@ -58,4 +66,7 @@ public class JwtService {
         return accessExpirationMs;
     }
 
+    public long getRefreshExpirationMs() {
+        return refreshExpirationMs;
+    }
 }

@@ -26,9 +26,9 @@ spring:
 
 app:
   seed:
-    demo-password: Pass@1234  #${SEED_DEMO_PASSWORD}
+    demo-password: ${SEED_DEMO_PASSWORD}
     workspace-name: Axlero Demo Workspace
     dataset-name: Demo Sales 2026
     users:
       - { username: aditya, email: aditya@axlero.demo, role: ADMIN }
-      - { username: demo_user, email: demo@axlero.demo, role: VIEWER }
+      - { username: demouser, email: demo@axlero.demo, role: VIEWER }

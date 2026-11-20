@@ -1,9 +1,6 @@
 package com.axlero.dashboard.Criteria_API.controller;
 
-import com.axlero.dashboard.Criteria_API.dto.LoginRequest;
-import com.axlero.dashboard.Criteria_API.dto.LoginResponse;
-import com.axlero.dashboard.Criteria_API.dto.RegisterRequest;
-import com.axlero.dashboard.Criteria_API.dto.RegisterResponse;
+import com.axlero.dashboard.Criteria_API.dto.*;
 import com.axlero.dashboard.Criteria_API.services.AuthService;
 import com.axlero.dashboard.Criteria_API.services.RegisterService;
 import jakarta.validation.Valid;
@@ -31,5 +28,16 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return ResponseEntity.ok(authService.refresh(request.refreshToken()));
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
+        authService.logout(request.refreshToken());
+        return ResponseEntity.noContent().build();
     }
 }
