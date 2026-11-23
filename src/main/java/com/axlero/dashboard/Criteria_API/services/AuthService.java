@@ -2,6 +2,8 @@ package com.axlero.dashboard.Criteria_API.services;
 
 import com.axlero.dashboard.Criteria_API.dto.LoginRequest;
 import com.axlero.dashboard.Criteria_API.dto.LoginResponse;
+import com.axlero.dashboard.Criteria_API.dto.UserResponse;
+import com.axlero.dashboard.Criteria_API.enums.Role;
 import com.axlero.dashboard.Criteria_API.entity.RefreshToken;
 import com.axlero.dashboard.Criteria_API.entity.User;
 import com.axlero.dashboard.Criteria_API.exception.ApiException;
@@ -38,7 +40,7 @@ public class AuthService {
     @Transactional
     public LoginResponse login(LoginRequest request) {
         Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.username().trim(), request.password()));
+                new UsernamePasswordAuthenticationToken(request.email(), request.password()));
         CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
         return issueTokens(principal);
     }
@@ -102,8 +104,10 @@ public class AuthService {
         LocalDateTime refreshExpiry = LocalDateTime.now().plus(Duration.ofMillis(jwtService.getRefreshExpirationMs()));
         refreshTokenService.store(user, refreshToken, refreshExpiry);
 
+        UserResponse userResponse = new UserResponse(principal.getId(), principal.getEmail(),
+                principal.getDisplayName(), Role.USER);
         return new LoginResponse(accessToken, refreshToken, "Bearer",
-                jwtService.getAccessExpirationMs() / 1000, principal.getId(), principal.getUsername());
+                jwtService.getAccessExpirationMs() / 1000, userResponse);
     }
 }
 
