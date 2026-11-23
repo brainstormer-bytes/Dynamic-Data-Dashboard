@@ -22,6 +22,10 @@ public class Dataset {
     @JoinColumn(name = "workspace_id", nullable = false)
     private Workspace workspace;
 
+    /** Stable key clients send as MetricQuery.datasetKey. Unique per workspace; name stays the display label. */
+    @Column(name = "dataset_key", nullable = false, length = 100)
+    private String datasetKey;
+
     @Column(nullable = false)
     private String name;
 

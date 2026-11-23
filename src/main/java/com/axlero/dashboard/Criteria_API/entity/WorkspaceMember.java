@@ -1,5 +1,6 @@
 package com.axlero.dashboard.Criteria_API.entity;
 
+import com.axlero.dashboard.Criteria_API.enums.WorkspaceRole;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -29,8 +30,9 @@ public class WorkspaceMember {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(nullable = false)
-    private String role;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 50)
+    private WorkspaceRole role;
 
     @Column(name = "joined_at", nullable = false)
     private LocalDateTime joinedAt = LocalDateTime.now();

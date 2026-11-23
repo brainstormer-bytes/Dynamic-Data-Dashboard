@@ -49,6 +49,31 @@ public class WidgetConfig {
     @Column(name = "group_by_column_key")
     private String groupByColumnKey;
 
+    /** JSON array of MetricQuery filters ({field, operator, value}); null/empty = no filters. */
+    @Column(name = "filters_json")
+    private String filtersJson;
+
+    // WidgetPosition (x, y, w, h) - all optional in v1
+    @Column(name = "position_x")
+    private Integer positionX;
+
+    @Column(name = "position_y")
+    private Integer positionY;
+
+    @Column(name = "position_w")
+    private Integer positionW;
+
+    @Column(name = "position_h")
+    private Integer positionH;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt = LocalDateTime.now();
+
+    @PreUpdate
+    void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
 }

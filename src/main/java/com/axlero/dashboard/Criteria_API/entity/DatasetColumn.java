@@ -5,7 +5,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** Describes one column of a dataset and which aggregations are allowed on it (used later for query whitelisting). */
+/**
+ * Query-engine allowlist entry. columnName is the API key AND the backing entity attribute name (e.g. "saleDate").
+ * A column may be the metric / group-by / filter only if listed here with matching allowedAggregations, groupable, filterable.
+ */
 @Entity
 @Table(name = "dataset_columns")
 @Getter
@@ -25,8 +28,18 @@ public class DatasetColumn {
     @Column(name = "column_name", nullable = false)
     private String columnName;
 
+    @Column(nullable = false, length = 150)
+    private String label;
+
+    /** NUMBER, STRING or DATE (CHECK constraint in V2). */
     @Column(name = "data_type", nullable = false)
     private String dataType;
+
+    @Column(nullable = false)
+    private boolean groupable = false;
+
+    @Column(nullable = false)
+    private boolean filterable = false;
 
     // comma separated, e.g. "SUM,COUNT"
     @Column(name = "allowed_aggregations")
