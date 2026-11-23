@@ -12,15 +12,15 @@ import java.util.List;
 public class CustomUserDetails implements UserDetails {
 
     private final Long id;
-    private final String username;
     private final String email;
+    private final String displayName;
     private final String password;
     private final UserStatus status;
 
     public CustomUserDetails(User user) {
         this.id = user.getId();
-        this.username = user.getUsername();
         this.email = user.getEmail();
+        this.displayName = user.getDisplayName();
         this.password = user.getPassword();
         this.status = user.getStatus();
     }
@@ -31,6 +31,10 @@ public class CustomUserDetails implements UserDetails {
 
     public String getEmail() {
         return email;
+    }
+
+    public String getDisplayName() {
+        return displayName;
     }
 
     /**
@@ -48,9 +52,10 @@ public class CustomUserDetails implements UserDetails {
         return password;
     }
 
+    /** Login identifier is the email (contract: login by email). */
     @Override
     public String getUsername() {
-        return username;
+        return email;
     }
 
     @Override
