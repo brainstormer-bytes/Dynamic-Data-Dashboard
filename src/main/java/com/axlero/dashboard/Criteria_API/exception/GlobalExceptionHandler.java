@@ -4,6 +4,7 @@ import com.axlero.dashboard.Criteria_API.dto.ErrorResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -31,7 +32,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApi(ApiException ex, HttpServletRequest req) {
-        return build(ex.getStatus(), ex.getMessage(), req, ex.getFieldErrors());
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.getStatus());
+        if (ex.getRetryAfterSeconds() != null) {
+            response.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()));
+        }
+        return response.body(ErrorResponse.of(ex.getStatus(), ex.getMessage(), req.getRequestURI(), ex.getFieldErrors()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

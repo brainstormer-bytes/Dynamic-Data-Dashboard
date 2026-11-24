@@ -1,4 +1,4 @@
-package com.axlero.dashboard.Criteria_API.services;
+package com.axlero.dashboard.Criteria_API.service;
 
 import com.axlero.dashboard.Criteria_API.entity.RefreshToken;
 import com.axlero.dashboard.Criteria_API.entity.User;
@@ -35,9 +35,8 @@ public class RefreshTokenService {
     }
 
     @Transactional
-    public void revoke(RefreshToken token) {
-        token.setRevoked(true);
-        refreshTokenRepository.save(token);
+    public boolean revokeIfActive(Long tokenId) {
+        return refreshTokenRepository.revokeIfActive(tokenId) == 1;
     }
 
     @Transactional

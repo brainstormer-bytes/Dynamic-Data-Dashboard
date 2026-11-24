@@ -1,14 +1,13 @@
 package com.axlero.dashboard.Criteria_API.config;
 
-import com.axlero.dashboard.Criteria_API.security.CustomUserDetailsService;
-import com.axlero.dashboard.Criteria_API.security.JwtAccessDeniedHandler;
-import com.axlero.dashboard.Criteria_API.security.JwtAuthenticationEntryPoint;
-import com.axlero.dashboard.Criteria_API.security.JwtAuthenticationFilter;
+import com.axlero.dashboard.Criteria_API.security.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.DisabledException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -31,6 +30,7 @@ public class SecurityConfig {
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
     private final JwtAccessDeniedHandler accessDeniedHandler;
     private final CustomUserDetailsService userDetailsService;
+    private final RateLimitFilter rateLimitFilter;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -44,7 +44,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/**").permitAll()
                         .anyRequest().authenticated())
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(rateLimitFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 
@@ -57,6 +58,16 @@ public class SecurityConfig {
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder());
+
+        provider.setPreAuthenticationChecks(user -> { });
+        provider.setPostAuthenticationChecks(user -> {
+            if (!user.isAccountNonLocked()) {
+                throw new LockedException("Account is locked");
+            }
+            if (!user.isEnabled()) {
+                throw new DisabledException("Account is disabled");
+            }
+        });
         return provider;
     }
 

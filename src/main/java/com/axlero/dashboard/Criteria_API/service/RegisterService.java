@@ -1,4 +1,4 @@
-package com.axlero.dashboard.Criteria_API.services;
+package com.axlero.dashboard.Criteria_API.service;
 
 import com.axlero.dashboard.Criteria_API.dto.RegisterRequest;
 import com.axlero.dashboard.Criteria_API.dto.UserResponse;

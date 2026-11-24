@@ -1,4 +1,4 @@
-package com.axlero.dashboard.Criteria_API.services;
+package com.axlero.dashboard.Criteria_API.service;
 
 import com.axlero.dashboard.Criteria_API.dto.LoginRequest;
 import com.axlero.dashboard.Criteria_API.dto.LoginResponse;
@@ -10,11 +10,13 @@ import com.axlero.dashboard.Criteria_API.exception.ApiException;
 import com.axlero.dashboard.Criteria_API.repository.UserRepository;
 import com.axlero.dashboard.Criteria_API.security.CustomUserDetails;
 import com.axlero.dashboard.Criteria_API.security.JwtService;
+import com.axlero.dashboard.Criteria_API.security.RateLimiter;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,10 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final UserRepository userRepository;
 
+    private final RateLimiter rateLimiter;
+    private static final int MAX_LOGIN_FAILURES = 5;
+    private static final Duration LOGIN_FAILURE_PERIOD = Duration.ofMinutes(10);
+
     /**
      * AuthenticationManager -> DaoAuthenticationProvider -> CustomUserDetailsService.loadUserByUsername()
      * -> PasswordEncoder.matches() -> account status checks -> authenticated token. Then JWTs are issued.
@@ -39,8 +45,23 @@ public class AuthService {
      */
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+        String failureKey = "login-failures:" + request.email();
+        RateLimiter.Decision decision = rateLimiter.peek(failureKey, MAX_LOGIN_FAILURES, LOGIN_FAILURE_PERIOD);
+        if (!decision.allowed()) {
+            throw ApiException.tooManyRequests("Too many failed login attempts. Try again later",
+                    decision.retryAfterSeconds());
+        }
+
+        Authentication authentication;
+        try {
+            authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(request.email(), request.password()));
+        } catch (BadCredentialsException e) {
+            rateLimiter.tryConsume(failureKey, MAX_LOGIN_FAILURES, LOGIN_FAILURE_PERIOD);
+            throw e;
+        }
+        rateLimiter.reset(failureKey);
+
         CustomUserDetails principal = (CustomUserDetails) authentication.getPrincipal();
         return issueTokens(principal);
     }
@@ -56,6 +77,7 @@ public class AuthService {
 
         RefreshToken stored = refreshTokenService.findByToken(refreshToken)
                 .orElseThrow(() -> ApiException.unauthorized("Invalid refresh token"));
+        Long userId = stored.getUser().getId();
 
         if (stored.isRevoked()) {
             refreshTokenService.revokeAllForUser(stored.getUser().getId());
@@ -70,16 +92,18 @@ public class AuthService {
             throw ApiException.forbidden("Account is locked or inactive");
         }
 
-        refreshTokenService.revoke(stored);
+        // The read above is only a pre-check. The real decision is this single atomic UPDATE.
+        if (!refreshTokenService.revokeIfActive(stored.getId())) {
+            refreshTokenService.revokeAllForUser(userId);
+            throw ApiException.unauthorized("Refresh token reuse detected. Please log in again");
+        }
         return issueTokens(principal);
     }
 
-    /** Idempotent: unknown/expired/already-revoked tokens are ignored, logout never fails. */
     @Transactional
     public void logout(String refreshToken) {
         refreshTokenService.findByToken(refreshToken)
-                .filter(t -> !t.isRevoked())
-                .ifPresent(refreshTokenService::revoke);
+                .ifPresent(t -> refreshTokenService.revokeIfActive(t.getId()));
     }
 
     private void validateRefreshJwt(String token) {

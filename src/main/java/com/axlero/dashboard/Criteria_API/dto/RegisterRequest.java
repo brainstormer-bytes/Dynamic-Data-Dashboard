@@ -10,7 +10,7 @@ import java.util.Locale;
 public record RegisterRequest(
         @NotBlank(message = "email is required")
         @Size(max = 254, message = "email must be at most 254 characters")
-        @Pattern(regexp = ValidationPatterns.EMAIL, message = "email must be a valid address")
+        @Pattern(regexp = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}$", message = "email must be a valid address")
         String email,
 
         @NotBlank(message = "password is required")

@@ -9,16 +9,24 @@ public class ApiException extends RuntimeException {
 
     private final HttpStatus status;
     private final List<ErrorResponse.FieldError> fieldErrors;
+    private final Long retryAfterSeconds;
 
     public ApiException(HttpStatus status, String message) {
-        this(status, message, List.of());
+        this(status, message, List.of(), null);
     }
 
     public ApiException(HttpStatus status, String message, List<ErrorResponse.FieldError> fieldErrors) {
+        this(status, message, fieldErrors, null);
+    }
+
+    private ApiException(HttpStatus status, String message,
+                         List<ErrorResponse.FieldError> fieldErrors, Long retryAfterSeconds) {
         super(message);
         this.status = status;
         this.fieldErrors = fieldErrors == null ? List.of() : List.copyOf(fieldErrors);
+        this.retryAfterSeconds = retryAfterSeconds;
     }
+
 
     public HttpStatus getStatus() {
         return status;
@@ -56,6 +64,12 @@ public class ApiException extends RuntimeException {
 
     public static ApiException conflict(String message) {
         return new ApiException(HttpStatus.CONFLICT, message);
+    }
+
+    public Long getRetryAfterSeconds() { return retryAfterSeconds; }
+
+    public static ApiException tooManyRequests(String message, long retryAfterSeconds) {
+        return new ApiException(HttpStatus.TOO_MANY_REQUESTS, message, List.of(), retryAfterSeconds);
     }
 }
 

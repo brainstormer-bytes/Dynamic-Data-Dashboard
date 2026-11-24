@@ -1,8 +1,8 @@
 package com.axlero.dashboard.Criteria_API.controller;
 
 import com.axlero.dashboard.Criteria_API.dto.*;
-import com.axlero.dashboard.Criteria_API.services.AuthService;
-import com.axlero.dashboard.Criteria_API.services.RegisterService;
+import com.axlero.dashboard.Criteria_API.service.AuthService;
+import com.axlero.dashboard.Criteria_API.service.RegisterService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
