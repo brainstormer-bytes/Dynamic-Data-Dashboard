@@ -1,3 +1,8 @@
+jwt:
+  secret: ${JWT_SECRET}                       # Base64, >= 32 bytes. Generate: openssl rand -base64 32
+  access-expiration: ${JWT_ACCESS_EXPIRATION}
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION}
+
 spring:
   application:
     name: Criteria-API
@@ -12,7 +17,12 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration/client
-  jwt:
-    secret: ${JWT_SECRET}                       # Base64, >= 32 bytes. Generate: openssl rand -base64 32
-    access-expiration: ${JWT_ACCESS_EXPIRATION}
-    refresh-expiration: ${JWT_REFRESH_EXPIRATION}
+
+app:
+  rate-limit:
+    enabled: true
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never

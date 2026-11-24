@@ -91,9 +91,6 @@ ALTER TABLE widget_configs
     ADD CONSTRAINT fk_widget_configs_workspace
         FOREIGN KEY (workspace_id) REFERENCES workspaces (id) ON DELETE CASCADE;
 
--- ---------------------------------------------------------------- INDEXES
-CREATE INDEX idx_workspace_members_user       ON workspace_members (user_id);
-CREATE INDEX idx_widget_configs_dashboard     ON widget_configs (workspace_id, dashboard_id);
-CREATE INDEX idx_widget_configs_dataset       ON widget_configs (workspace_id, dataset_id);
+-- -------------------------------- INDEXES ----------------------------------------------
+
 CREATE INDEX idx_sales_records_dataset_date   ON sales_records (dataset_id, sale_date);
-CREATE INDEX idx_refresh_tokens_user          ON refresh_tokens (user_id);
