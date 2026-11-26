@@ -1,0 +1,902 @@
+openapi: 3.0.3
+info:
+  title: Dynamic Data Dashboard Builder API
+  version: 2.2.0
+  description: |
+    Contract between backend (Spring Boot) and frontend (React).
+    This file is the source of truth. Change it first, then the code.
+
+    Conventions
+    - All paths start with /api/v1
+    - JSON field names are camelCase
+    - IDs are integers (int64)
+    - Timestamps are ISO-8601 UTC strings
+    - Every protected endpoint needs `Authorization: Bearer <jwt>`
+    - Every error uses the ErrorResponse shape
+    - Workspace access: a non-member gets 404 (the workspace is not revealed);
+      a member whose role is too low gets 403. Roles inherit: ADMIN > EDITOR > VIEWER.
+      Each operation's description states its minimum workspace role.
+
+    Changes in 2.2.0 (aligned with ER v1.3 and team answers of 26 Nov 2026)
+    - GET /workspaces/{workspaceId}/dashboards restored (list of DashboardSummary)
+    - DELETE /workspaces/{workspaceId} takes ?confirmName= instead of a request body
+    - MetricResult.cached removed (caching not built yet; may return later as optional)
+    - WidgetResponse gains createdAt and updatedAt
+    - MemberResponse gains displayName; member update/remove document 404
+    - expiresIn example set to 900 (15-minute access token)
+    - Example column orderDate renamed saleDate to match sales_records.sale_date
+
+servers:
+  - url: http://localhost:8080
+    description: Local backend
+  - url: http://127.0.0.1:4010
+    description: Prism mock server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Workspaces
+  - name: Members # ADDED
+  - name: Datasets
+  - name: Dashboards
+  - name: Widgets
+  - name: Metrics
+  - name: Export
+
+paths:
+  # ---------------------------------------------------------------- AUTH
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and receive a JWT
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': # CHANGED v2.1: account suspended, locked or deactivated
+          description: Account is locked or inactive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example:
+                status: 403
+                error: FORBIDDEN
+                message: Account is locked or inactive
+                path: /api/v1/auth/login
+                timestamp: '2026-11-20T10:15:30Z'
+                fieldErrors: []
+
+  /api/v1/auth/refresh: # CHANGED v2.1 (added, already implemented in the backend)
+    post:
+      tags: [Auth]
+      summary: Exchange a refresh token for a new access + refresh token (rotation)
+      description: |
+        The used refresh token is revoked and a new pair is issued. If an already-revoked
+        refresh token is sent again, all refresh tokens of that user are revoked (reuse detection)
+        and the call fails with 401. The refresh token goes in the body, so no Authorization header.
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshTokenRequest' }
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Account is locked or inactive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /api/v1/auth/logout: # CHANGED v2.1 (added, already implemented in the backend)
+    post:
+      tags: [Auth]
+      summary: Log out by revoking a refresh token
+      description: Idempotent. Unknown, expired or already revoked tokens are ignored and still return 204.
+      operationId: logout
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshTokenRequest' }
+      responses:
+        '204': { description: Logged out }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  # ---------------------------------------------------------- WORKSPACES
+  /api/v1/workspaces:
+    get:
+      tags: [Workspaces]
+      summary: List workspaces the current user can access
+      operationId: listWorkspaces
+      responses:
+        '200':
+          description: Workspaces
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WorkspaceResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post: # ADDED
+      tags: [Workspaces]
+      summary: Create a workspace (Creator automatically becomes ADMIN)
+      operationId: createWorkspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkspaceRequest' }
+      responses:
+        '201':
+          description: Workspace created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/workspaces/{workspaceId}: # ADDED
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    delete:
+      tags: [Workspaces]
+      summary: Delete a workspace (Requires exact name confirmation)
+      operationId: deleteWorkspace
+      x-minimum-workspace-role: ADMIN
+      parameters:
+        - name: confirmName
+          in: query
+          required: true
+          description: Must equal the workspace's exact name (URL-encoded). A mismatch returns 400.
+          schema: { type: string }
+          example: Sales Team
+      responses:
+        '204': { description: Workspace and everything it owns deleted (database cascades) }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------- MEMBERS
+  /api/v1/workspaces/{workspaceId}/members: # ADDED
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Members]
+      summary: List members of a workspace
+      operationId: listMembers
+      x-minimum-workspace-role: VIEWER
+      responses:
+        '200':
+          description: List of members
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MemberResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Members]
+      summary: Add a member (Admin only)
+      operationId: addMember
+      x-minimum-workspace-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddMemberRequest' }
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/workspaces/{workspaceId}/members/{userId}: # ADDED
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - name: userId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    put:
+      tags: [Members]
+      summary: Update member role (Admin only, Editor/Viewer only)
+      operationId: updateMemberRole
+      x-minimum-workspace-role: ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMemberRoleRequest' }
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Members]
+      summary: Remove member (Admin only)
+      operationId: removeMember
+      x-minimum-workspace-role: ADMIN
+      responses:
+        '204': { description: Member removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------ DATASETS
+  /api/v1/workspaces/{workspaceId}/datasets:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Datasets]
+      summary: List datasets and their allowed columns (fills the widget builder dropdowns)
+      operationId: listDatasets
+      x-minimum-workspace-role: VIEWER
+      responses:
+        '200':
+          description: Datasets with column metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DatasetResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ---------------------------------------------------------- DASHBOARDS
+  /api/v1/workspaces/{workspaceId}/dashboards:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Dashboards]
+      summary: List dashboards in a workspace (without widgets)
+      operationId: listDashboards
+      x-minimum-workspace-role: VIEWER
+      responses:
+        '200':
+          description: Dashboards
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DashboardSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Dashboards]
+      summary: Create a dashboard
+      operationId: createDashboard
+      x-minimum-workspace-role: EDITOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DashboardRequest' }
+      responses:
+        '201':
+          description: Dashboard created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/workspaces/{workspaceId}/dashboards/{dashboardId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/DashboardId'
+    get:
+      tags: [Dashboards]
+      summary: Get one dashboard with its widgets
+      operationId: getDashboard
+      x-minimum-workspace-role: VIEWER
+      responses:
+        '200':
+          description: Dashboard
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Dashboards]
+      summary: Rename / update a dashboard
+      operationId: updateDashboard
+      x-minimum-workspace-role: EDITOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DashboardRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Dashboards]
+      summary: Delete a dashboard and its widgets
+      operationId: deleteDashboard
+      x-minimum-workspace-role: EDITOR
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------- WIDGETS
+  /api/v1/workspaces/{workspaceId}/dashboards/{dashboardId}/widgets:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/DashboardId'
+    post:
+      tags: [Widgets]
+      summary: Add a widget to a dashboard
+      operationId: createWidget
+      x-minimum-workspace-role: EDITOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WidgetRequest' }
+      responses:
+        '201':
+          description: Widget created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WidgetResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/workspaces/{workspaceId}/dashboards/{dashboardId}/widgets/{widgetId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/DashboardId'
+      - $ref: '#/components/parameters/WidgetId'
+    put:
+      tags: [Widgets]
+      summary: Update a widget's configuration
+      operationId: updateWidget
+      x-minimum-workspace-role: EDITOR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WidgetRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WidgetResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Widgets]
+      summary: Remove a widget
+      operationId: deleteWidget
+      x-minimum-workspace-role: EDITOR
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/workspaces/{workspaceId}/dashboards/{dashboardId}/widgets/{widgetId}/data:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/DashboardId'
+      - $ref: '#/components/parameters/WidgetId'
+    get:
+      tags: [Widgets]
+      summary: Run a saved widget's query and return chart-ready data
+      operationId: getWidgetData
+      x-minimum-workspace-role: VIEWER
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetricResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------- METRICS
+  /api/v1/workspaces/{workspaceId}/metrics/query:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Metrics]
+      summary: Preview a metric without saving a widget (used by the widget builder)
+      description: |
+        Backend validates datasetKey, metricField, groupByField and filter fields
+        against the dataset metadata allowlist. Unknown fields return 400.
+      operationId: queryMetric
+      x-minimum-workspace-role: EDITOR (proposed, not yet decided)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MetricQuery' }
+      responses:
+        '200':
+          description: Chart-ready result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetricResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # -------------------------------------------------------------- EXPORT
+  /api/v1/workspaces/{workspaceId}/dashboards/{dashboardId}/widgets/{widgetId}/export:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/DashboardId'
+      - $ref: '#/components/parameters/WidgetId'
+    get:
+      tags: [Export]
+      summary: Download a widget's data as CSV or Excel
+      operationId: exportWidget
+      x-minimum-workspace-role: VIEWER (proposed, not yet decided)
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [CSV, XLSX]
+          example: CSV
+      responses:
+        '200':
+          description: File download
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              example: attachment; filename="sales-by-region.csv"
+          content:
+            text/csv:
+              schema: { type: string }
+              example: "region,value\nNorth,12000\nSouth,9000\n"
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+      example: 1
+    DashboardId:
+      name: dashboardId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+      example: 10
+    WidgetId:
+      name: widgetId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+      example: 100
+
+  responses:
+    BadRequest:
+      description: Validation failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            status: 400
+            error: VALIDATION_FAILED
+            message: Request has invalid fields
+            path: /api/v1/workspaces/1/metrics/query
+            timestamp: '2026-11-20T10:15:30Z'
+            fieldErrors:
+              - field: groupByField
+                message: 'Column "password" is not allowed for dataset "sales"'
+    Unauthorized:
+      description: Missing, invalid or expired token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            status: 401
+            error: UNAUTHORIZED
+            message: Token is missing or expired
+            path: /api/v1/workspaces
+            timestamp: '2026-11-20T10:15:30Z'
+            fieldErrors: []
+    Forbidden:
+      description: Caller is a member of the workspace but their role is too low for this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            status: 403
+            error: FORBIDDEN
+            message: This action requires the EDITOR role
+            path: /api/v1/workspaces/1/dashboards
+            timestamp: '2026-11-20T10:15:30Z'
+            fieldErrors: []
+    NotFound:
+      description: Resource does not exist, or the caller is not a member of the workspace
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            status: 404
+            error: NOT_FOUND
+            message: Dashboard 99 not found
+            path: /api/v1/workspaces/1/dashboards/99
+            timestamp: '2026-11-20T10:15:30Z'
+            fieldErrors: []
+    Conflict:
+      description: Duplicate or constraint violation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            status: 409
+            error: CONFLICT
+            message: Email is already registered
+            path: /api/v1/auth/register
+            timestamp: '2026-11-20T10:15:30Z'
+            fieldErrors: []
+
+  schemas:
+    # ---------- common
+    ErrorResponse:
+      type: object
+      description: |
+        CHANGED v2.1 (clarified): any 4xx other than 401/403/404/409 (for example 405 or 415) uses
+        VALIDATION_FAILED. Unexpected server errors use status 500 with INTERNAL_ERROR and a generic message.
+      required: [status, error, message, path, timestamp, fieldErrors]
+      properties:
+        status: { type: integer, example: 400 }
+        error:
+          type: string
+          description: Stable machine-readable code
+          enum: [VALIDATION_FAILED, UNAUTHORIZED, FORBIDDEN, NOT_FOUND, CONFLICT, INTERNAL_ERROR]
+        message: { type: string, example: Request has invalid fields }
+        path: { type: string, example: /api/v1/workspaces/1/metrics/query }
+        timestamp: { type: string, format: date-time }
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string, example: groupByField }
+              message: { type: string, example: Column is not allowed }
+
+    Aggregation:
+      type: string
+      enum: [SUM, COUNT, AVG, MIN, MAX]
+      example: SUM
+    ChartType:
+      type: string
+      enum: [BAR, LINE, KPI]
+      example: BAR
+    Role: # Global Role
+      type: string
+      description: |
+        CHANGED v2.1 (clarified): platform-level role. It is not stored in the database and gives no workspace
+        permissions (those come from WorkspaceRole). Every account is currently USER.
+        A rename of ADMIN to PLATFORM_ADMIN is agreed but not implemented yet.
+      enum: [USER, ADMIN]
+      example: USER
+    WorkspaceRole: # ADDED
+      type: string
+      enum: [ADMIN, EDITOR, VIEWER]
+      example: ADMIN
+
+    # ---------- auth
+    RegisterRequest:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email: { type: string, format: email, maxLength: 254, description: Stored lowercase and used to log in, example: priya@example.com } # CHANGED v2.1: maxLength
+        password: { type: string, minLength: 8, description: At most 72 bytes (BCrypt limit), example: Secret123! } # CHANGED v2.1: description
+        displayName: { type: string, minLength: 1, maxLength: 100, example: Priya Sharma } # CHANGED v2.1: minLength
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, maxLength: 254, example: priya@example.com } # CHANGED v2.1: maxLength
+        password: { type: string, example: Secret123! }
+    RefreshTokenRequest: # CHANGED v2.1 (added)
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, example: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.refresh456 }
+    LoginResponse:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn, user] # CHANGED v2.1: refreshToken added
+      properties:
+        accessToken: { type: string, example: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc123 }
+        refreshToken: { type: string, description: Rotated on every /auth/refresh. Only its SHA-256 hash is stored server side., example: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.refresh456 } # CHANGED v2.1
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: integer, description: Seconds until the access token expires (15 minutes today; set by environment variable), example: 900 }
+        user: { $ref: '#/components/schemas/UserResponse' }
+    UserResponse:
+      type: object
+      required: [id, email, displayName, role]
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        email: { type: string, example: priya@example.com }
+        displayName: { type: string, example: Priya Sharma }
+        role: { $ref: '#/components/schemas/Role' }
+
+    # ---------- workspace
+    CreateWorkspaceRequest: # ADDED
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, example: "Sales Team" }
+    WorkspaceResponse:
+      type: object
+      required: [id, name, role] # UPDATED (added role)
+      properties:
+        id: { type: integer, format: int64, example: 1 }
+        name: { type: string, example: Sales Team }
+        role: { $ref: '#/components/schemas/WorkspaceRole' } # ADDED
+
+    # ---------- members (ADDED)
+    MemberResponse:
+      type: object
+      required: [userId, email, displayName, role, joinedAt]
+      properties:
+        userId: { type: integer, format: int64, example: 2 }
+        email: { type: string, example: bob@example.com }
+        displayName: { type: string, example: Bob Kumar }
+        role: { $ref: '#/components/schemas/WorkspaceRole' }
+        joinedAt: { type: string, format: date-time }
+    AddMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email, example: bob@example.com }
+        role: 
+          type: string
+          enum: [EDITOR, VIEWER]
+          description: Cannot add a user directly as ADMIN
+          example: VIEWER
+    UpdateMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: 
+          type: string
+          enum: [EDITOR, VIEWER]
+          description: Cannot promote a user to ADMIN
+          example: EDITOR
+
+    # ---------- dataset metadata
+    DatasetResponse:
+      type: object
+      required: [key, label, columns]
+      properties:
+        key: { type: string, description: Stable identifier sent back in queries, example: sales }
+        label: { type: string, example: Sales Records }
+        columns:
+          type: array
+          items: { $ref: '#/components/schemas/ColumnMetadata' }
+      example:
+        key: sales
+        label: Sales Records
+        columns:
+          - { key: amount, label: Sales Amount, dataType: NUMBER, groupable: false, filterable: true, allowedAggregations: [SUM, AVG, MIN, MAX] }
+          - { key: region, label: Region, dataType: STRING, groupable: true, filterable: true, allowedAggregations: [COUNT] }
+          - { key: saleDate, label: Sale Date, dataType: DATE, groupable: true, filterable: true, allowedAggregations: [COUNT] }
+    ColumnMetadata:
+      type: object
+      required: [key, label, dataType, groupable, filterable, allowedAggregations]
+      properties:
+        key: { type: string, example: amount }
+        label: { type: string, example: Sales Amount }
+        dataType: { type: string, enum: [NUMBER, STRING, DATE], example: NUMBER }
+        groupable: { type: boolean, example: false }
+        filterable: { type: boolean, example: true }
+        allowedAggregations:
+          type: array
+          items: { $ref: '#/components/schemas/Aggregation' }
+
+    # ---------- dashboard
+    DashboardRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, example: Q4 Sales Overview }
+        description: { type: string, maxLength: 500, nullable: true, example: Regional performance }
+    DashboardSummary:
+      type: object
+      required: [id, workspaceId, name, widgetCount, updatedAt]
+      properties:
+        id: { type: integer, format: int64, example: 10 }
+        workspaceId: { type: integer, format: int64, example: 1 }
+        name: { type: string, example: Q4 Sales Overview }
+        description: { type: string, nullable: true, example: Regional performance }
+        widgetCount: { type: integer, example: 3 }
+        updatedAt: { type: string, format: date-time, example: '2026-11-20T10:15:30Z' }
+    DashboardResponse:
+      type: object
+      required: [id, workspaceId, name, widgets, createdAt, updatedAt]
+      properties:
+        id: { type: integer, format: int64, example: 10 }
+        workspaceId: { type: integer, format: int64, example: 1 }
+        name: { type: string, example: Q4 Sales Overview }
+        description: { type: string, nullable: true, example: Regional performance }
+        widgets:
+          type: array
+          items: { $ref: '#/components/schemas/WidgetResponse' }
+        createdAt: { type: string, format: date-time, example: '2026-11-18T09:00:00Z' }
+        updatedAt: { type: string, format: date-time, example: '2026-11-20T10:15:30Z' }
+
+    # ---------- widget
+    WidgetRequest:
+      type: object
+      required: [title, chartType, query]
+      properties:
+        title: { type: string, maxLength: 100, example: Sales by Region }
+        chartType: { $ref: '#/components/schemas/ChartType' }
+        position: { $ref: '#/components/schemas/WidgetPosition' }
+        query: { $ref: '#/components/schemas/MetricQuery' }
+    WidgetResponse:
+      type: object
+      required: [id, dashboardId, title, chartType, query, createdAt, updatedAt]
+      properties:
+        id: { type: integer, format: int64, example: 100 }
+        dashboardId: { type: integer, format: int64, example: 10 }
+        title: { type: string, example: Sales by Region }
+        chartType: { $ref: '#/components/schemas/ChartType' }
+        position: { $ref: '#/components/schemas/WidgetPosition' }
+        query: { $ref: '#/components/schemas/MetricQuery' }
+        createdAt: { type: string, format: date-time, example: '2026-11-18T09:05:00Z' }
+        updatedAt: { type: string, format: date-time, example: '2026-11-20T10:15:30Z' }
+    WidgetPosition:
+      type: object
+      description: Grid placement, stored in widget_configs.position_x/y/w/h (all nullable)
+      properties:
+        x: { type: integer, example: 0 }
+        y: { type: integer, example: 0 }
+        w: { type: integer, example: 6 }
+        h: { type: integer, example: 4 }
+
+    # ---------- metric query
+    MetricQuery:
+      type: object
+      required: [datasetKey, metricField, aggregation]
+      properties:
+        datasetKey: { type: string, example: sales }
+        metricField: { type: string, description: Column key from dataset metadata, example: amount }
+        aggregation: { $ref: '#/components/schemas/Aggregation' }
+        groupByField:
+          type: string
+          nullable: true
+          description: Omit or null for a single KPI value
+          example: region
+        filters:
+          type: array
+          description: Optional. Each field must be a filterable column. Saved widgets store this in widget_configs.filters_json.
+          items: { $ref: '#/components/schemas/Filter' }
+    Filter:
+      type: object
+      required: [field, operator, value]
+      properties:
+        field: { type: string, example: saleDate }
+        operator: { type: string, enum: [EQ, NEQ, GT, GTE, LT, LTE, IN], example: GTE }
+        value:
+          description: Single value, or an array for IN
+          oneOf:
+            - type: string
+            - type: number
+            - type: array
+              items: { type: string }
+          example: '2026-10-01'
+    MetricResult:
+      type: object
+      required: [datasetKey, metricField, aggregation, points]
+      properties:
+        datasetKey: { type: string, example: sales }
+        metricField: { type: string, example: amount }
+        aggregation: { $ref: '#/components/schemas/Aggregation' }
+        groupByField: { type: string, nullable: true, example: region }
+        points:
+          type: array
+          description: One entry per group. For a KPI (no groupBy) there is exactly one point with label "total".
+          items:
+            type: object
+            required: [label, value]
+            properties:
+              label: { type: string, example: North }
+              value: { type: number, example: 12000 }
+        generatedAt: { type: string, format: date-time, example: '2026-11-20T10:15:30Z' }
+      example:
+        datasetKey: sales
+        metricField: amount
+        aggregation: SUM
+        groupByField: region
+        points:
+          - { label: North, value: 12000 }
+          - { label: South, value: 9000 }
+          - { label: East, value: 7500 }
+        generatedAt: '2026-11-20T10:15:30Z'
